@@ -4,6 +4,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.patch.resourceXml
 import app.morphe.patcher.patch.stringOption
 import app.morphe.patcher.util.returnEarly
 import app.morphe.patches.shared.misc.settings.preference.ListPreference
@@ -33,8 +34,20 @@ private const val PREFERENCE_CLASS =
 // Sorted by key in the root menu: right below "About" (00_about).
 private const val SCREEN_KEY = "morphe_settings_screen_00_updates"
 
+// The update channels. Written into the arrays of the app here: the settings patch does not add the
+// arrays of a list preference.
+private val CHANNEL_ENTRIES = ArrayResource(
+    "morphe_update_channel_entries",
+    listOf("@string/morphe_update_channel_entry_all", "@string/morphe_update_channel_entry_stable"),
+)
+private val CHANNEL_VALUES = ArrayResource("morphe_update_channel_entry_values", listOf("all", "stable"))
+
 private val updateCheckerResourcePatch = resourcePatch {
     execute {
+        resourceXml("res/values/arrays.xml").use { arrays ->
+            CHANNEL_ENTRIES.serialize(arrays.root)
+            CHANNEL_VALUES.serialize(arrays.root)
+        }
         copyResources(
             "updates",
             ResourceGroup("drawable", "$SCREEN_KEY.xml", "${SCREEN_KEY}_bold.xml"),
@@ -100,11 +113,8 @@ val updateCheckerPatch = bytecodePatch(
             if (stableUpdateUrl.isNullOrBlank()) null else ListPreference(
                 key = "morphe_update_channel",
                 summaryKey = null,
-                entries = ArrayResource(
-                    "morphe_update_channel_entries",
-                    listOf("@string/morphe_update_channel_entry_all", "@string/morphe_update_channel_entry_stable"),
-                ),
-                entryValues = ArrayResource("morphe_update_channel_entry_values", listOf("all", "stable")),
+                entries = CHANNEL_ENTRIES,
+                entryValues = CHANNEL_VALUES,
             ),
             NonInteractivePreference(
                 key = "morphe_update_check_now",
