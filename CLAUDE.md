@@ -13,3 +13,15 @@
 ## Workflow
 
 - When a task is done, commit and push, then open a pull request to `main` and merge it right away (no need to ask). The owner may forget to merge.
+
+## Release notes (owner's rules, for every release)
+
+- Order: the install note (`ⓘ …`) under the title, `## ✨ New features`, `## 🌟 Mod features`
+  (`notes/mod-features.md`, in every release), `## 🔧 Other improvements` (alone, or important mod changes from
+  `notes/improvements.md`), the line on the RLX Patches version, `## 📦 Files`.
+- New features: also those of the Morphe versions the mod did not release (every dev version since the last
+  release; `scripts/changelog.py`).
+- No fix lists and no counts of fixes; "Morphe" only in the APK file names (app names: YouTube RLX / YT Music RLX).
+- No package names and no theme color codes in the notes, the files table (file and themes only) or the
+  README variants. Variants in the notes: "Amoled (…)" and "Original (BBK Clone, …)".
+- To fix the notes of a published release: Actions → Update release notes (`release-notes.yml`).

@@ -493,10 +493,11 @@ jobs:
             echo
             echo "## 📦 Files"
             echo
-            echo "| File | Package | Theme |"
-            echo "|---|---|---|"
-            echo "| $(apk_link "$MORPHE") | \`app.morphe.android.youtube\` | All in-app themes, Pure Black / White by default |"
-            echo "| $(apk_link "$HIBY") | \`com.hiby.music\` (clone) | All in-app themes, Modern Dark / Soft Light by default |"
+            # File and themes only, no package names
+            echo "| File | Theme |"
+            echo "|---|---|"
+            echo "| $(apk_link "$MORPHE") | All in-app themes, Pure Black / White by default |"
+            echo "| $(apk_link "$HIBY") | All in-app themes, Modern Dark / Soft Light by default |"
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" \
             --title "$APP_TITLE v$YT_VERSION · RLX Patches $RLX_VER" \
