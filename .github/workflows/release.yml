@@ -155,7 +155,7 @@ jobs:
             ./gradlew :patches:generatePatchesList --no-daemon
             ./gradlew :patches:buildAndroid --no-daemon
             ls patches/build/libs/
-            cp "$(ls patches/build/libs/*.mpp | head -1)" "$RUNNER_TEMP/patches.mpp"
+            cp "patches/build/libs/patches-${PATCHES_VER}.mpp" "$RUNNER_TEMP/patches.mpp"
             cp patches-list.json "$RUNNER_TEMP/patches-list.json"
             exit 0
           fi
