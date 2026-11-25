@@ -8,6 +8,11 @@ on:
         required: true
         default: "release"
         type: string
+      morphe:
+        description: "Test only: build the Amoled variant from Morphe Patches instead, such as RAMiK4/morphe-patches@branch (official patches only, no mod patches)"
+        required: false
+        default: ""
+        type: string
       publish:
         description: "Publish the release (unchecked: test build in Artifacts only)"
         required: false
@@ -62,8 +67,24 @@ jobs:
       - name: Resolve RLX Patches version
         env:
           RLX: ${{ inputs.rlx }}
+          MORPHE: ${{ inputs.morphe }}
           PUBLISH: ${{ inputs.publish }}
         run: |
+          if [ -n "$MORPHE" ]; then
+            # Morphe Patches test build: <owner>/<repo>@<branch, tag or commit>
+            [ "$PUBLISH" != "true" ] || { echo "::error::A Morphe Patches build is for testing only. Uncheck 'Publish the release'."; exit 1; }
+            case "$MORPHE" in
+              */*@?*) ;;
+              *) echo "::error::Morphe Patches source must be <owner>/<repo>@<ref>"; exit 1 ;;
+            esac
+            echo "Morphe Patches: $MORPHE"
+            echo "MORPHE_MODE=true" >> "$GITHUB_ENV"
+            echo "PATCHES_SRC=${MORPHE%@*}" >> "$GITHUB_ENV"
+            echo "PATCHES_REF=${MORPHE#*@}" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "MORPHE_MODE=false" >> "$GITHUB_ENV"
+          echo "PATCHES_SRC=$PATCHES_REPO" >> "$GITHUB_ENV"
           case "$RLX" in
             release|"") REF=$(gh api "repos/$PATCHES_REPO/releases/latest" -q .tag_name) ;;
             v[0-9]*)    REF=$(gh api "repos/$PATCHES_REPO/releases/tags/$RLX" -q .tag_name) ;;
@@ -79,15 +100,21 @@ jobs:
       - name: Checkout RLX Patches
         uses: actions/checkout@v5
         with:
-          repository: ${{ env.PATCHES_REPO }}
+          repository: ${{ env.PATCHES_SRC }}
           ref: ${{ env.PATCHES_REF }}
           path: patches-src
 
       - name: Read versions
         run: |
           # RLX version (rlx/rlx.properties) and the Morphe version it is based on (gradle.properties)
-          RLX_VER=$(sed -n 's/^version *= *//p' patches-src/rlx/rlx.properties)
           PATCHES_VER=$(sed -n 's/^version *= *//p' patches-src/gradle.properties)
+          if [ "$MORPHE_MODE" = "true" ]; then
+            RLX_VER=none
+            echo "BUILD_LABEL=Morphe-v$PATCHES_VER" >> "$GITHUB_ENV"
+          else
+            RLX_VER=$(sed -n 's/^version *= *//p' patches-src/rlx/rlx.properties)
+            echo "BUILD_LABEL=RLX-v$RLX_VER" >> "$GITHUB_ENV"
+          fi
           [ -n "$RLX_VER" ] && [ -n "$PATCHES_VER" ] || { echo "::error::Could not read the RLX and Morphe versions"; exit 1; }
           echo "RLX Patches $RLX_VER, Morphe $PATCHES_VER"
           echo "RLX_VER=$RLX_VER" >> "$GITHUB_ENV"
@@ -95,6 +122,12 @@ jobs:
 
       - name: Generate changelog
         run: |
+          if [ "$MORPHE_MODE" = "true" ]; then
+            # Test build of Morphe Patches: no notes
+            : > "$RUNNER_TEMP/changes.md"
+            echo "Morphe Patches test build" > "$RUNNER_TEMP/changes.txt"
+            exit 0
+          fi
           # YouTube part of the Morphe changelog (RLX Patches includes it): the new features of a stable version's
           # own section, or of all dev versions since the last one released here. Fixes are not listed: the notes
           # end with the "Other improvements" heading alone. Changes keep the order of the Morphe changelog.
@@ -117,6 +150,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "$MORPHE_MODE" = "true" ]; then
+            # Morphe Patches only: no changes and no patches of the mod
+            ./gradlew :patches:generatePatchesList --no-daemon
+            ./gradlew :patches:buildAndroid --no-daemon
+            ls patches/build/libs/
+            cp "$(ls patches/build/libs/*.mpp | head -1)" "$RUNNER_TEMP/patches.mpp"
+            cp patches-list.json "$RUNNER_TEMP/patches-list.json"
+            exit 0
+          fi
           # Changes of the mod to RLX Patches files (addons/rlx/*.patch, in name order: such as changes made in
           # RLX Patches that are not released yet), skipped once RLX Patches includes them
           for f in "$GITHUB_WORKSPACE"/addons/rlx/*.patch; do
@@ -231,6 +273,7 @@ jobs:
                  or (.compatiblePackages | any(.packageName == "com.google.android.youtube")))) | .name] | unique' \
             "$RUNNER_TEMP/patches-list.json" > "$RUNNER_TEMP/yt-patches.json"
           echo "YouTube patches: $(jq length "$RUNNER_TEMP/yt-patches.json")"
+          [ "$MORPHE_MODE" = "true" ] && exit 0
           for p in "Update checker" "Hide experimental app notice"; do
             jq -e --arg p "$p" 'index($p) != null' "$RUNNER_TEMP/yt-patches.json" >/dev/null \
               || { echo "::error::Patch of the mod not found: $p"; exit 1; }
@@ -304,7 +347,7 @@ jobs:
           build_variant() {
             local id=$1 suffix=$2 pkg=$3 clone=$4 colors=$5
             local opts="$RUNNER_TEMP/options-$id.json"
-            local base="${FILE_PREFIX}-v${YT_VERSION}_RLX-v${RLX_VER}"
+            local base="${FILE_PREFIX}-v${YT_VERSION}_${BUILD_LABEL}"
             # Test builds keep their build number, so that two of them are told apart on the phone
             [ "${{ inputs.publish }}" = "true" ] || base="${base}-b${BUILD}"
             local out="$RUNNER_TEMP/out/${base}_${suffix}.apk"
@@ -338,7 +381,7 @@ jobs:
                 .value.enabled = ((.key as $k | $yt[0] | index($k)) != null
                                   or .key == "Change installer source")
               )
-              | .[0].patches["Clone app"].enabled = $clone
+              | if .[0].patches["Clone app"] then .[0].patches["Clone app"].enabled = $clone else . end
               | if $clone then opt("Clone app"; "packageName"; $pkg) else . end
               # Theme colors changed in the app, starting with the colors of the variant
               | opt("Theme"; "darkThemeColor"; "in-app")
@@ -346,12 +389,14 @@ jobs:
               # The option is new in RLX Patches 2.4.6: without it the app starts with the RLX colors
               | if .[0].patches["Theme"].options | has("inAppDefaultColors")
                 then opt("Theme"; "inAppDefaultColors"; $colors) else . end
-              # Patches of the mod (extras/)
-              | opt("Update checker"; "updateUrl"; $updurl)
-              | opt("Update checker"; "stableUpdateUrl"; $stableurl)
-              | opt("Update checker"; "changelogs"; ($changelogs | tojson))
-              | opt("Update checker"; "buildNumber"; $build)
-              | opt("Update checker"; "versionInfo"; $verinfo)
+              # Patches of the mod (extras/), not in a Morphe Patches test build
+              | if .[0].patches["Update checker"] then
+                  opt("Update checker"; "updateUrl"; $updurl)
+                  | opt("Update checker"; "stableUpdateUrl"; $stableurl)
+                  | opt("Update checker"; "changelogs"; ($changelogs | tojson))
+                  | opt("Update checker"; "buildNumber"; $build)
+                  | opt("Update checker"; "versionInfo"; $verinfo)
+                else . end
             ' "$RUNNER_TEMP/base.json" > "$opts"
             jq -e '.[0].patches["Theme"].options | has("inAppDefaultColors")' "$opts" >/dev/null \
               || echo "::notice::RLX Patches $RLX_VER has no option for the default colors in the app: $id starts with the RLX colors"
@@ -413,10 +458,15 @@ jobs:
           }
 
           # Original_BBK: clone com.hiby.music, the RLX colors (dark #0F0F0F, light #F0F0F0) and settings
+          if [ "$MORPHE_MODE" = "true" ]; then
+            # Morphe Patches test build: only Amoled, as Morphe makes it
+            build_variant morphe "Amoled"       app.morphe.android.youtube false pure_black
+          else
           build_variant hiby   "Original_BBK" com.hiby.music              true  rlx
           # Amoled: pure black / white by default; test builds (not published): only the clone variant, which is the one tested
           if [ "${{ inputs.publish }}" = "true" ]; then
           build_variant morphe "Amoled"       app.morphe.android.youtube false pure_black
+          fi
           fi
 
       - name: Set local time of test build
