@@ -404,10 +404,15 @@ jobs:
             [ "$MORPHE_MODE" = "true" ] || jq -e '.[0].patches["Theme"].options | has("inAppDefaultColors")' "$opts" >/dev/null \
               || echo "::notice::RLX Patches $RLX_VER has no option for the default colors in the app: $id starts with the RLX colors"
             jq -r '.[].patches | to_entries[] | select(.value.enabled) | "  ✓ \(.key)"' "$opts"
+            [ "$MORPHE_MODE" != "true" ] || jq -c '.[0] | {keys: keys, patches: (.patches | keys | .[0:10])}' "$RUNNER_TEMP/base.json"
 
+            # A Morphe Patches test build uses the default patches and options of Morphe Patches, as Morphe Manager:
+            # its options file has other names than the one of RLX Patches, so no patch would be selected
+            local opts_args=(--options-file "$opts")
+            [ "$MORPHE_MODE" != "true" ] || opts_args=()
             java -jar "$RUNNER_TEMP/morphe-cli.jar" patch \
               -p "$RUNNER_TEMP/patches.mpp" \
-              --options-file "$opts" \
+              "${opts_args[@]}" \
               --keystore "$RUNNER_TEMP/morphe.keystore" \
               --keystore-password "${KEYSTORE_PASSWORD}" \
               --keystore-entry-alias "${KEY_ALIAS:-Morphe}" \
