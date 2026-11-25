@@ -384,10 +384,13 @@ jobs:
               | if .[0].patches["Clone app"] then .[0].patches["Clone app"].enabled = $clone else . end
               | if $clone then opt("Clone app"; "packageName"; $pkg) else . end
               # Theme colors changed in the app, starting with the colors of the variant
-              | opt("Theme"; "darkThemeColor"; "in-app")
-              | opt("Theme"; "lightThemeColor"; "in-app")
+              # A Morphe Patches test build keeps the colors of its Theme patch
+              | if .[0].patches["Theme"] then
+                  opt("Theme"; "darkThemeColor"; "in-app")
+                  | opt("Theme"; "lightThemeColor"; "in-app")
+                else . end
               # The option is new in RLX Patches 2.4.6: without it the app starts with the RLX colors
-              | if .[0].patches["Theme"].options | has("inAppDefaultColors")
+              | if (.[0].patches["Theme"].options // {}) | has("inAppDefaultColors")
                 then opt("Theme"; "inAppDefaultColors"; $colors) else . end
               # Patches of the mod (extras/), not in a Morphe Patches test build
               | if .[0].patches["Update checker"] then
@@ -398,7 +401,7 @@ jobs:
                   | opt("Update checker"; "versionInfo"; $verinfo)
                 else . end
             ' "$RUNNER_TEMP/base.json" > "$opts"
-            jq -e '.[0].patches["Theme"].options | has("inAppDefaultColors")' "$opts" >/dev/null \
+            [ "$MORPHE_MODE" = "true" ] || jq -e '.[0].patches["Theme"].options | has("inAppDefaultColors")' "$opts" >/dev/null \
               || echo "::notice::RLX Patches $RLX_VER has no option for the default colors in the app: $id starts with the RLX colors"
             jq -r '.[].patches | to_entries[] | select(.value.enabled) | "  ✓ \(.key)"' "$opts"
 
